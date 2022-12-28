@@ -1,23 +1,22 @@
-package io.gitlab.rxp90.jsymspell.api;
+package io.gitlab.rxp90.jsymspell.api
 
-public interface StringDistance {
-
+interface StringDistance {
     /**
-     * Calculates the distance between {@code string1} and {@code string2}, early stopping at {@code maxDistance}.
+     * Calculates the distance between `string1` and `string2`, early stopping at `maxDistance`.
      * @param string1 first string
      * @param string2 second string
      * @param maxDistance distance at which the algorithm will stop early
-     * @return distance between {@code string1} and {@code string2}, early stopping at {@code maxDistance}, or {@code -1} if {@code maxDistance} was reached
+     * @return distance between `string1` and `string2`, early stopping at `maxDistance`, or `-1` if `maxDistance` was reached
      */
-    int distanceWithEarlyStop(String string1, String string2, int maxDistance);
+    fun distanceWithEarlyStop(string1: String?, string2: String?, maxDistance: Int): Int
 
     /**
-     * @see StringDistance#distanceWithEarlyStop(String, String, int)
+     * @see StringDistance.distanceWithEarlyStop
      * @param string1 first string
      * @param string2 second string
-     * @return distance between {@code string1} and {@code string2}
+     * @return distance between `string1` and `string2`
      */
-    default int distance(String string1, String string2){
-        return distanceWithEarlyStop(string1, string2, Math.max(string1.length(), string2.length()));
+    fun distance(string1: String, string2: String): Int {
+        return distanceWithEarlyStop(string1, string2, Math.max(string1.length, string2.length))
     }
 }
