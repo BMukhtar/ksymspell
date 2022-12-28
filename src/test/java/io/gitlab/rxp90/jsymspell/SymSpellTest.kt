@@ -1,223 +1,259 @@
-package io.gitlab.rxp90.jsymspell;
+package io.gitlab.rxp90.jsymspell
 
-import io.gitlab.rxp90.jsymspell.api.Bigram;
-import io.gitlab.rxp90.jsymspell.api.StringDistance;
-import io.gitlab.rxp90.jsymspell.api.SuggestItem;
-import io.gitlab.rxp90.jsymspell.exceptions.NotInitializedException;
-import org.junit.jupiter.api.Test;
+import io.gitlab.rxp90.jsymspell.api.Bigram
+import io.gitlab.rxp90.jsymspell.api.StringDistance
+import io.gitlab.rxp90.jsymspell.api.SuggestItem
+import io.gitlab.rxp90.jsymspell.exceptions.NotInitializedException
+import org.junit.jupiter.api.Assertions
+import org.junit.jupiter.api.Test
+import java.nio.file.Files
+import java.nio.file.Paths
+import java.util.*
+import java.util.function.Function
+import java.util.stream.Collectors
 
-import java.io.IOException;
-import java.net.URISyntaxException;
-import java.net.URL;
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.util.*;
-import java.util.stream.Collectors;
+internal class SymSpellTest {
+    private val bigramsPath = Objects.requireNonNull(javaClass.classLoader.getResource("bigrams.txt"))
+    private val bigrams = Files.lines(Paths.get(bigramsPath.toURI()))
+        .map { line: String -> line.split(" ".toRegex()).dropLastWhile { it.isEmpty() }.toTypedArray() }
+        .collect(
+            Collectors.toMap(
+                { tokens: Array<String> -> Bigram(tokens[0], tokens[1]) },
+                { tokens: Array<String> -> tokens[2].toLong() }
+            )
+        )
+    private val wordsPath = Objects.requireNonNull(javaClass.classLoader.getResource("words.txt"))
+    private val unigrams = Files.lines(Paths.get(wordsPath.toURI()))
+        .map { line: String -> line.split(",".toRegex()).dropLastWhile { it.isEmpty() }.toTypedArray() }
+        .collect(
+            Collectors.toMap(
+                { tokens: Array<String> -> tokens[0] },
+                { tokens: Array<String> -> tokens[1].toLong() }
+            )
+        )
 
-import static org.junit.jupiter.api.Assertions.*;
-
-class SymSpellTest {
-    private final URL bigramsPath = Objects.requireNonNull(getClass().getClassLoader().getResource("bigrams.txt"));
-    private final Map<Bigram, Long> bigrams = Files.lines(Paths.get(bigramsPath.toURI()))
-                                                   .map(line -> line.split(" "))
-                                                   .collect(Collectors.toMap(tokens -> new Bigram(tokens[0], tokens[1]), tokens -> Long.parseLong(tokens[2])));
-
-    private final URL wordsPath = Objects.requireNonNull(getClass().getClassLoader().getResource("words.txt"));
-    private final Map<String, Long> unigrams = Files.lines(Paths.get(wordsPath.toURI()))
-                                                    .map(line -> line.split(","))
-                                                    .collect(Collectors.toMap(tokens -> tokens[0], tokens -> Long.parseLong(tokens[1])));
-
-    SymSpellTest() throws IOException, URISyntaxException {
+    @Test
+    @Throws(Exception::class)
+    fun loadDictionary() {
+        val symSpell = SymSpellBuilder().setMaxDictionaryEditDistance(2)
+            .setUnigramLexicon(mapOf("abcde", 100L, "abcdef", 90L))
+            .createSymSpell()
+        val deletes: Map<String, Collection<String>> = symSpell.getDeletes()
+        val suggestions = deletes["abcd"]!!
+        Assertions.assertTrue(
+            suggestions.containsAll(Arrays.asList("abcde", "abcdef")),
+            "abcd == abcde - {e} (distance 1), abcd == abcdef - {ef} (distance 2)"
+        )
     }
 
     @Test
-    void loadDictionary() throws Exception {
-        SymSpellImpl symSpell = new SymSpellBuilder().setMaxDictionaryEditDistance(2)
-                                                     .setUnigramLexicon(mapOf("abcde", 100L, "abcdef", 90L))
-                                                     .createSymSpell();
-
-        Map<String, Collection<String>> deletes = symSpell.getDeletes();
-
-        Collection<String> suggestions = deletes.get("abcd");
-        assertTrue(suggestions.containsAll(Arrays.asList("abcde", "abcdef")), "abcd == abcde - {e} (distance 1), abcd == abcdef - {ef} (distance 2)");
+    @Throws(Exception::class)
+    fun lookupCompound() {
+        val symSpell: SymSpell = SymSpellBuilder().setUnigramLexicon(unigrams)
+            .setBigramLexicon(bigrams)
+            .setMaxDictionaryEditDistance(2)
+            .setPrefixLength(10)
+            .createSymSpell()
+        val suggestions = symSpell.lookupCompound(
+            "whereis th elove hehad dated forImuch of thepast who couqdn'tread in sixthgrade and ins pired him".lowercase(
+                Locale.getDefault()
+            ), 2, false
+        )
+        Assertions.assertEquals(1, suggestions.size)
+        Assertions.assertEquals(
+            "where is the love he had dated for much of the past who couldn't read in sixth grade and inspired him",
+            suggestions[0].suggestion
+        )
     }
 
     @Test
-    void lookupCompound() throws Exception {
-        SymSpell symSpell = new SymSpellBuilder().setUnigramLexicon(unigrams)
-                                                 .setBigramLexicon(bigrams)
-                                                 .setMaxDictionaryEditDistance(2)
-                                                 .setPrefixLength(10)
-                                                 .createSymSpell();
-
-        List<SuggestItem> suggestions = symSpell.lookupCompound("whereis th elove hehad dated forImuch of thepast who couqdn'tread in sixthgrade and ins pired him".toLowerCase(), 2, false);
-
-        assertEquals(1, suggestions.size());
-        assertEquals("where is the love he had dated for much of the past who couldn't read in sixth grade and inspired him", suggestions.get(0).getSuggestion());
+    @Throws(Exception::class)
+    fun lookupCompound2() {
+        val symSpell: SymSpell = SymSpellBuilder().setUnigramLexicon(unigrams)
+            .setBigramLexicon(bigrams)
+            .setMaxDictionaryEditDistance(2)
+            .setPrefixLength(10)
+            .createSymSpell()
+        val suggestions = symSpell.lookupCompound(
+            "Can yu readthis messa ge despite thehorible sppelingmsitakes".lowercase(Locale.getDefault()),
+            2,
+            false
+        )
+        Assertions.assertEquals(1, suggestions.size)
+        Assertions.assertEquals(
+            "can you read this message despite the horrible spelling mistakes",
+            suggestions[0].suggestion
+        )
     }
 
     @Test
-    void lookupCompound2() throws Exception {
-        SymSpell symSpell = new SymSpellBuilder().setUnigramLexicon(unigrams)
-                                                 .setBigramLexicon(bigrams)
-                                                 .setMaxDictionaryEditDistance(2)
-                                                 .setPrefixLength(10)
-                                                 .createSymSpell();
-
-        List<SuggestItem> suggestions = symSpell.lookupCompound("Can yu readthis messa ge despite thehorible sppelingmsitakes".toLowerCase(), 2, false);
-
-        assertEquals(1, suggestions.size());
-        assertEquals("can you read this message despite the horrible spelling mistakes", suggestions.get(0).getSuggestion());
+    @Throws(Exception::class)
+    fun lookupCompoundWithUnknownWords() {
+        val symSpell: SymSpell = SymSpellBuilder().setUnigramLexicon(unigrams)
+            .setBigramLexicon(bigrams)
+            .setMaxDictionaryEditDistance(2)
+            .setPrefixLength(7)
+            .createSymSpell()
+        val suggestions = symSpell.lookupCompound(
+            "Atrociraptor wasassigned to the Velociraptorinae within a larger Dromaeosauridae",
+            1,
+            false
+        )
+        Assertions.assertEquals(
+            "Atrociraptor was assigned to the Velociraptorinae within a larger Dromaeosauridae",
+            suggestions[0].suggestion
+        )
     }
 
     @Test
-    void lookupCompoundWithUnknownWords() throws Exception {
-        SymSpell symSpell = new SymSpellBuilder().setUnigramLexicon(unigrams)
-                                                 .setBigramLexicon(bigrams)
-                                                 .setMaxDictionaryEditDistance(2)
-                                                 .setPrefixLength(7)
-                                                 .createSymSpell();
-
-        List<SuggestItem> suggestions = symSpell.lookupCompound("Atrociraptor wasassigned to the Velociraptorinae within a larger Dromaeosauridae", 1, false);
-
-        assertEquals("Atrociraptor was assigned to the Velociraptorinae within a larger Dromaeosauridae", suggestions.get(0).getSuggestion());
-    }
-
-
-    @Test
-    void lookupWordWithNoErrors() throws Exception {
-        SymSpell symSpell = new SymSpellBuilder().setUnigramLexicon(unigrams)
-                                                 .setMaxDictionaryEditDistance(3)
-                                                 .createSymSpell();
-
-        List<SuggestItem> suggestions = symSpell.lookup("questionnaire", Verbosity.CLOSEST);
-
-        assertEquals(1, suggestions.size());
-        assertEquals("questionnaire", suggestions.get(0).getSuggestion());
-        assertEquals(0, suggestions.get(0).getEditDistance());
+    @Throws(Exception::class)
+    fun lookupWordWithNoErrors() {
+        val symSpell: SymSpell = SymSpellBuilder().setUnigramLexicon(unigrams)
+            .setMaxDictionaryEditDistance(3)
+            .createSymSpell()
+        val suggestions = symSpell.lookup("questionnaire", Verbosity.CLOSEST)
+        Assertions.assertEquals(1, suggestions.size)
+        Assertions.assertEquals("questionnaire", suggestions[0].suggestion)
+        Assertions.assertEquals(0, suggestions[0].editDistance)
     }
 
     @Test
-    void noSuggestionFound() throws Exception {
-        SymSpell symSpell = new SymSpellBuilder().setUnigramLexicon(unigrams)
-                                                 .setMaxDictionaryEditDistance(2)
-                                                 .createSymSpell();
-
-        List<SuggestItem> suggestions = symSpell.lookup("qwertyuiop", Verbosity.ALL, false);
-
-        assertTrue(suggestions.isEmpty());
+    @Throws(Exception::class)
+    fun noSuggestionFound() {
+        val symSpell: SymSpell = SymSpellBuilder().setUnigramLexicon(unigrams)
+            .setMaxDictionaryEditDistance(2)
+            .createSymSpell()
+        val suggestions = symSpell.lookup("qwertyuiop", Verbosity.ALL, false)
+        Assertions.assertTrue(suggestions.isEmpty())
     }
 
     @Test
-    void noSuggestionFoundIncludeUnknown() throws Exception {
-        SymSpell symSpell = new SymSpellBuilder().setUnigramLexicon(unigrams)
-                                                 .setMaxDictionaryEditDistance(2)
-                                                 .createSymSpell();
-
-        String input = "qwertyuiop";
-        List<SuggestItem> suggestions = symSpell.lookup(input, Verbosity.ALL, true);
-
-        assertFalse(suggestions.isEmpty());
-        assertEquals(input, suggestions.get(0).getSuggestion());
+    @Throws(Exception::class)
+    fun noSuggestionFoundIncludeUnknown() {
+        val symSpell: SymSpell = SymSpellBuilder().setUnigramLexicon(unigrams)
+            .setMaxDictionaryEditDistance(2)
+            .createSymSpell()
+        val input = "qwertyuiop"
+        val suggestions = symSpell.lookup(input, Verbosity.ALL, true)
+        Assertions.assertFalse(suggestions.isEmpty())
+        Assertions.assertEquals(input, suggestions[0].suggestion)
     }
 
     @Test
-    void combineWords() throws Exception {
-        SymSpellImpl symSpell = new SymSpellBuilder().setUnigramLexicon(unigrams)
-                                                     .setBigramLexicon(bigrams)
-                                                     .setMaxDictionaryEditDistance(2)
-                                                     .setPrefixLength(10)
-                                                     .createSymSpell();
-
-        Optional<SuggestItem> newSuggestion = symSpell.combineWords(2, false, "pired", "ins", new SuggestItem("in", 1, 8.46E9), new SuggestItem("tired", 1, 1.1E7));
-        assertTrue(newSuggestion.isPresent());
-        assertEquals(new SuggestItem("inspired", 0, symSpell.getUnigramLexicon().get("inspired")), newSuggestion.get());
+    @Throws(Exception::class)
+    fun combineWords() {
+        val symSpell = SymSpellBuilder().setUnigramLexicon(unigrams)
+            .setBigramLexicon(bigrams)
+            .setMaxDictionaryEditDistance(2)
+            .setPrefixLength(10)
+            .createSymSpell()
+        val newSuggestion = symSpell.combineWords(
+            2,
+            false,
+            "pired",
+            "ins",
+            SuggestItem("in", 1, 8.46E9),
+            SuggestItem("tired", 1, 1.1E7)
+        )
+        Assertions.assertTrue(newSuggestion.isPresent)
+        Assertions.assertEquals(
+            SuggestItem("inspired", 0, symSpell.unigramLexicon["inspired"]!!.toDouble()),
+            newSuggestion.get()
+        )
     }
 
     @Test
-    void lookupWithoutLoadingDictThrowsException() throws Exception {
-        SymSpell symSpell = new SymSpellBuilder().createSymSpell();
-        assertThrows(NotInitializedException.class, () -> symSpell.lookup("boom", Verbosity.CLOSEST));
+    @Throws(Exception::class)
+    fun lookupWithoutLoadingDictThrowsException() {
+        val symSpell: SymSpell = SymSpellBuilder().createSymSpell()
+        Assertions.assertThrows(NotInitializedException::class.java) { symSpell.lookup("boom", Verbosity.CLOSEST) }
     }
 
     @Test
-    void lookupAll() throws Exception {
-        SymSpell symSpell = new SymSpellBuilder().setMaxDictionaryEditDistance(2)
-                                                 .setUnigramLexicon(unigrams)
-                                                 .createSymSpell();
-
-        List<SuggestItem> suggestions = symSpell.lookup("sumarized", Verbosity.ALL);
-        assertEquals(6, suggestions.size());
-        assertEquals("summarized", suggestions.get(0).getSuggestion());
-        assertEquals(1, suggestions.get(0).getEditDistance());
+    @Throws(Exception::class)
+    fun lookupAll() {
+        val symSpell: SymSpell = SymSpellBuilder().setMaxDictionaryEditDistance(2)
+            .setUnigramLexicon(unigrams)
+            .createSymSpell()
+        val suggestions = symSpell.lookup("sumarized", Verbosity.ALL)
+        Assertions.assertEquals(6, suggestions.size)
+        Assertions.assertEquals("summarized", suggestions[0].suggestion)
+        Assertions.assertEquals(1, suggestions[0].editDistance)
     }
 
     @Test
-    void editsDistance0() throws Exception {
-        int maxEditDistance = 0;
-        SymSpellImpl symSpell = new SymSpellBuilder().setMaxDictionaryEditDistance(maxEditDistance).createSymSpell();
-        Set<String> edits = symSpell.edits("example", 0, new HashSet<>());
-        assertEquals(Collections.emptySet(), edits);
+    @Throws(Exception::class)
+    fun editsDistance0() {
+        val maxEditDistance = 0
+        val symSpell = SymSpellBuilder().setMaxDictionaryEditDistance(maxEditDistance).createSymSpell()
+        val edits = symSpell.edits("example", 0, HashSet())
+        Assertions.assertEquals(emptySet<Any>(), edits)
     }
 
     @Test
-    void editsDistance1() throws Exception {
-        int maxEditDistance = 1;
-        SymSpellImpl symSpell = new SymSpellBuilder().setMaxDictionaryEditDistance(maxEditDistance).createSymSpell();
-        Set<String> edits = symSpell.edits("example", 0, new HashSet<>());
-        assertEquals(setOf("xample", "eample", "exmple", "exaple", "examle", "exampe", "exampl"), edits);
+    @Throws(Exception::class)
+    fun editsDistance1() {
+        val maxEditDistance = 1
+        val symSpell = SymSpellBuilder().setMaxDictionaryEditDistance(maxEditDistance).createSymSpell()
+        val edits = symSpell.edits("example", 0, HashSet())
+        Assertions.assertEquals(setOf("xample", "eample", "exmple", "exaple", "examle", "exampe", "exampl"), edits)
     }
 
     @Test
-    void editsDistance2() throws Exception {
-        int maxEditDistance = 2;
-        SymSpellImpl symSpell = new SymSpellBuilder().setMaxDictionaryEditDistance(maxEditDistance).createSymSpell();
-        Set<String> edits = symSpell.edits("example", 0, new HashSet<>());
-        Set<String> expected = setOf("xample", "eample", "exmple", "exaple", "examle", "exampe", "exampl", "exale", "emple",
-                "exape", "exmpe", "exapl", "xampe", "exple", "exmpl", "exmle", "xamle", "xmple",
-                "exame", "xaple", "xampl", "examl", "eaple", "eampl", "examp", "ample", "eamle",
-                "eampe");
-        assertEquals(expected, edits);
+    @Throws(Exception::class)
+    fun editsDistance2() {
+        val maxEditDistance = 2
+        val symSpell = SymSpellBuilder().setMaxDictionaryEditDistance(maxEditDistance).createSymSpell()
+        val edits = symSpell.edits("example", 0, HashSet())
+        val expected = setOf(
+            "xample", "eample", "exmple", "exaple", "examle", "exampe", "exampl", "exale", "emple",
+            "exape", "exmpe", "exapl", "xampe", "exple", "exmpl", "exmle", "xamle", "xmple",
+            "exame", "xaple", "xampl", "examl", "eaple", "eampl", "examp", "ample", "eamle",
+            "eampe"
+        )
+        Assertions.assertEquals(expected, edits)
     }
 
     @Test
-    void customStringDistanceAlgorithm() throws NotInitializedException {
-        StringDistance hammingDistance = (string1, string2, maxDistance) -> {
-            if (string1.length() != string2.length()){
-                return -1;
+    @Throws(NotInitializedException::class)
+    fun customStringDistanceAlgorithm() {
+        val hammingDistance = StringDistance { string1: String, string2: String, maxDistance: Int ->
+            if (string1.length != string2.length) {
+                return@StringDistance -1
             }
-            char[] chars1 = string1.toCharArray();
-            char[] chars2 = string2.toCharArray();
-            int distance = 0;
-            for (int i = 0; i < chars1.length; i++) {
-                char c1 = chars1[i];
-                char c2 = chars2[i];
+            val chars1 = string1.toCharArray()
+            val chars2 = string2.toCharArray()
+            var distance = 0
+            for (i in chars1.indices) {
+                val c1 = chars1[i]
+                val c2 = chars2[i]
                 if (c1 != c2) {
-                    distance += 1;
+                    distance += 1
                 }
             }
-            return distance;
-        };
-        SymSpell symSpell = new SymSpellBuilder().setUnigramLexicon(mapOf("1001001", 1L))
-                                                 .setStringDistanceAlgorithm(hammingDistance)
-                                                 .setMaxDictionaryEditDistance(1)
-                                                 .createSymSpell();
-
-        List<SuggestItem> suggestions = symSpell.lookup("1000001", Verbosity.CLOSEST);
-
-        assertEquals(1, suggestions.get(0).getEditDistance());
-    }
-
-
-    public static <T> Map<String, T> mapOf(Object... objects){
-        Map<String, T> map = new HashMap<>();
-        for (int i = 0; i < objects.length; i+=2){
-            map.put((String) objects[i], (T) objects[i+1]);
+            distance
         }
-        return map;
+        val symSpell: SymSpell = SymSpellBuilder().setUnigramLexicon(mapOf("1001001", 1L))
+            .setStringDistanceAlgorithm(hammingDistance)
+            .setMaxDictionaryEditDistance(1)
+            .createSymSpell()
+        val suggestions = symSpell.lookup("1000001", Verbosity.CLOSEST)
+        Assertions.assertEquals(1, suggestions[0].editDistance)
     }
 
-    public static <T> Set<T> setOf(T ... values){
-        return Arrays.stream(values).collect(Collectors.toSet());
+    companion object {
+        fun <T> mapOf(vararg objects: Any): Map<String, T> {
+            val map: MutableMap<String, T> = HashMap()
+            var i = 0
+            while (i < objects.size) {
+                map[objects[i] as String] = objects[i + 1] as T
+                i += 2
+            }
+            return map
+        }
+
+        fun <T> setOf(vararg values: T): Set<T> {
+            return Arrays.stream(values).collect(Collectors.toSet())
+        }
     }
 }

@@ -1,67 +1,61 @@
-package io.gitlab.rxp90.jsymspell;
+package io.gitlab.rxp90.jsymspell
 
-import io.gitlab.rxp90.jsymspell.api.CharComparator;
-import io.gitlab.rxp90.jsymspell.api.DamerauLevenshteinOSA;
-import io.gitlab.rxp90.jsymspell.api.StringDistance;
-import org.junit.jupiter.api.Nested;
-import org.junit.jupiter.api.Test;
+import io.gitlab.rxp90.jsymspell.api.CharComparator
+import io.gitlab.rxp90.jsymspell.api.DamerauLevenshteinOSA
+import io.gitlab.rxp90.jsymspell.api.StringDistance
+import org.junit.jupiter.api.Assertions
+import org.junit.jupiter.api.Nested
+import org.junit.jupiter.api.Test
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-
-class DamerauLevenshteinOSATest {
-
-    private static final DamerauLevenshteinOSA DAMERAU_LEVENSHTEIN_OSA = new DamerauLevenshteinOSA();
-
+internal class DamerauLevenshteinOSATest {
     @Test
-    void distanceWithEarlyStop() {
-        int distance = DAMERAU_LEVENSHTEIN_OSA.distanceWithEarlyStop("CA", "ABC", 3);
-        assertEquals(3, distance);
+    fun distanceWithEarlyStop() {
+        val distance = DAMERAU_LEVENSHTEIN_OSA.distanceWithEarlyStop("CA", "ABC", 3)
+        Assertions.assertEquals(3, distance)
     }
 
     @Test
-    void distanceLargerThanMax() {
-        int distance = DAMERAU_LEVENSHTEIN_OSA.distanceWithEarlyStop("abcdef", "ghijkl", 3);
-        assertEquals(-1, distance);
+    fun distanceLargerThanMax() {
+        val distance = DAMERAU_LEVENSHTEIN_OSA.distanceWithEarlyStop("abcdef", "ghijkl", 3)
+        Assertions.assertEquals(-1, distance)
     }
 
     @Test
-    void maxDistance() {
-        int distance = DAMERAU_LEVENSHTEIN_OSA.distance("abcdef", "ghijkl");
-        assertEquals(6, distance);
+    fun maxDistance() {
+        val distance = DAMERAU_LEVENSHTEIN_OSA.distance("abcdef", "ghijkl")
+        Assertions.assertEquals(6, distance)
     }
 
     @Nested
-    class CustomCharComparator {
-
+    internal inner class CustomCharComparator {
         @Test
-        void similarChars() {
-            CharComparator customCharComparator = new CharComparator() {
-                @Override
-                public boolean areEqual(char ch1, char ch2) {
-                    if (ch1 == 'ñ' || ch2 == 'ñ') {
-                        return ch1 == 'n' || ch2 == 'n';
-                    }
-                    return ch1 == ch2;
+        fun similarChars() {
+            val customCharComparator: CharComparator = object : CharComparator {
+                override fun areEqual(ch1: Char, ch2: Char): Boolean {
+                    return if (ch1 == 'ñ' || ch2 == 'ñ') {
+                        ch1 == 'n' || ch2 == 'n'
+                    } else ch1 == ch2
                 }
-            };
-            StringDistance damerauLevenshteinOSA = new DamerauLevenshteinOSA(customCharComparator);
-            int distance = damerauLevenshteinOSA.distance("Espana", "España");
-            assertEquals(0, distance);
+            }
+            val damerauLevenshteinOSA: StringDistance = DamerauLevenshteinOSA(customCharComparator)
+            val distance = damerauLevenshteinOSA.distance("Espana", "España")
+            Assertions.assertEquals(0, distance)
         }
 
         @Test
-        void ignoreCase() {
-            CharComparator ignoreCaseCharComparator = new CharComparator() {
-                @Override
-                public boolean areEqual(char ch1, char ch2) {
-                    return Character.toLowerCase(ch1) == Character.toLowerCase(ch2);
+        fun ignoreCase() {
+            val ignoreCaseCharComparator: CharComparator = object : CharComparator {
+                override fun areEqual(ch1: Char, ch2: Char): Boolean {
+                    return ch1.lowercaseChar() == ch2.lowercaseChar()
                 }
-            };
-            StringDistance damerauLevenshteinOSA = new DamerauLevenshteinOSA(ignoreCaseCharComparator);
-            int distance = damerauLevenshteinOSA.distance("JSYMSPELL", "jsymspell");
-            assertEquals(0, distance);
+            }
+            val damerauLevenshteinOSA: StringDistance = DamerauLevenshteinOSA(ignoreCaseCharComparator)
+            val distance = damerauLevenshteinOSA.distance("JSYMSPELL", "jsymspell")
+            Assertions.assertEquals(0, distance)
         }
     }
 
-
+    companion object {
+        private val DAMERAU_LEVENSHTEIN_OSA = DamerauLevenshteinOSA()
+    }
 }

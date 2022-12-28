@@ -1,35 +1,29 @@
-package io.gitlab.rxp90.jsymspell;
+package io.gitlab.rxp90.jsymspell
 
-import io.gitlab.rxp90.jsymspell.api.SuggestItem;
-import org.junit.jupiter.api.Test;
+import io.gitlab.rxp90.jsymspell.api.SuggestItem
+import org.junit.jupiter.api.Assertions
+import org.junit.jupiter.api.Test
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+internal class SuggestItemTest {
+    @Test
+    fun compareToAscendingByDistance() {
+        val smallDistance = SuggestItem("test", 5, 10.0)
+        val bigDistance = SuggestItem("test", 10, 10.0)
+        Assertions.assertEquals(-1, smallDistance.compareTo(bigDistance))
+    }
 
-class SuggestItemTest {
+    @Test
+    fun compareToDescendingByFrequency() {
+        val sameDistanceSmallerFreq = SuggestItem("test", 5, 10.0)
+        val sameDistanceBiggerFreq = SuggestItem("test", 5, 20.0)
+        Assertions.assertEquals(1, sameDistanceSmallerFreq.compareTo(sameDistanceBiggerFreq))
+    }
 
-  @Test
-  void compareToAscendingByDistance() {
-    SuggestItem smallDistance = new SuggestItem("test", 5, 10);
-    SuggestItem bigDistance = new SuggestItem("test", 10, 10);
-
-    assertEquals(-1, smallDistance.compareTo(bigDistance));
-  }
-
-  @Test
-  void compareToDescendingByFrequency() {
-    SuggestItem sameDistanceSmallerFreq = new SuggestItem("test", 5, 10);
-    SuggestItem sameDistanceBiggerFreq = new SuggestItem("test", 5, 20);
-
-    assertEquals(1, sameDistanceSmallerFreq.compareTo(sameDistanceBiggerFreq));
-  }
-
-
-  @Test
-  void equalsAndHashCode() {
-    SuggestItem si1 = new SuggestItem("test", 5, 10);
-    SuggestItem si2 = new SuggestItem("test", 5, 10);
-
-    assertEquals(si1, si2);
-    assertEquals(si1.hashCode(), si2.hashCode());
-  }
+    @Test
+    fun equalsAndHashCode() {
+        val si1 = SuggestItem("test", 5, 10.0)
+        val si2 = SuggestItem("test", 5, 10.0)
+        Assertions.assertEquals(si1, si2)
+        Assertions.assertEquals(si1.hashCode(), si2.hashCode())
+    }
 }
