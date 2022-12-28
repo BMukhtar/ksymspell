@@ -1,66 +1,47 @@
-package io.gitlab.rxp90.jsymspell;
+package io.gitlab.rxp90.jsymspell
 
-import io.gitlab.rxp90.jsymspell.api.Bigram;
-import io.gitlab.rxp90.jsymspell.api.DamerauLevenshteinOSA;
-import io.gitlab.rxp90.jsymspell.api.StringDistance;
+import io.gitlab.rxp90.jsymspell.api.Bigram
+import io.gitlab.rxp90.jsymspell.api.DamerauLevenshteinOSA
+import io.gitlab.rxp90.jsymspell.api.StringDistance
 
-import java.util.HashMap;
-import java.util.Map;
+class SymSpellBuilder {
+    var maxDictionaryEditDistance = 2
+        private set
+    var prefixLength = 7
+        private set
+    var stringDistanceAlgorithm: StringDistance = DamerauLevenshteinOSA()
+        private set
+    var unigramLexicon: Map<String, Long> = HashMap()
+        private set
+    var bigramLexicon: Map<Bigram, Long> = HashMap()
+        private set
 
-public class SymSpellBuilder {
-
-    private int maxDictionaryEditDistance = 2;
-    private int prefixLength = 7;
-    private StringDistance stringDistanceAlgorithm = new DamerauLevenshteinOSA();
-    private Map<String, Long> unigramLexicon = new HashMap<>();
-    private Map<Bigram, Long> bigramLexicon = new HashMap<>();
-
-    public SymSpellBuilder setMaxDictionaryEditDistance(int maxDictionaryEditDistance) {
-        this.maxDictionaryEditDistance = maxDictionaryEditDistance;
-        return this;
+    fun setMaxDictionaryEditDistance(maxDictionaryEditDistance: Int): SymSpellBuilder {
+        this.maxDictionaryEditDistance = maxDictionaryEditDistance
+        return this
     }
 
-    public SymSpellBuilder setPrefixLength(int prefixLength) {
-        this.prefixLength = prefixLength;
-        return this;
+    fun setPrefixLength(prefixLength: Int): SymSpellBuilder {
+        this.prefixLength = prefixLength
+        return this
     }
 
-    public SymSpellBuilder setUnigramLexicon(Map<String, Long> unigramLexicon) {
-        this.unigramLexicon = unigramLexicon;
-        return this;
+    fun setUnigramLexicon(unigramLexicon: Map<String, Long>): SymSpellBuilder {
+        this.unigramLexicon = unigramLexicon
+        return this
     }
 
-    public SymSpellBuilder setBigramLexicon(Map<Bigram, Long> bigramLexicon) {
-        this.bigramLexicon = bigramLexicon;
-        return this;
+    fun setBigramLexicon(bigramLexicon: Map<Bigram, Long>): SymSpellBuilder {
+        this.bigramLexicon = bigramLexicon
+        return this
     }
 
-    public SymSpellBuilder setStringDistanceAlgorithm(StringDistance distanceAlgorithm){
-        this.stringDistanceAlgorithm = distanceAlgorithm;
-        return this;
+    fun setStringDistanceAlgorithm(distanceAlgorithm: StringDistance): SymSpellBuilder {
+        stringDistanceAlgorithm = distanceAlgorithm
+        return this
     }
 
-    public int getMaxDictionaryEditDistance() {
-        return maxDictionaryEditDistance;
-    }
-
-    public int getPrefixLength() {
-        return prefixLength;
-    }
-
-    public Map<String, Long> getUnigramLexicon() {
-        return unigramLexicon;
-    }
-
-    public Map<Bigram, Long> getBigramLexicon() {
-        return bigramLexicon;
-    }
-
-    public StringDistance getStringDistanceAlgorithm() {
-        return stringDistanceAlgorithm;
-    }
-
-    public SymSpellImpl createSymSpell() {
-        return new SymSpellImpl(this);
+    fun createSymSpell(): SymSpellImpl {
+        return SymSpellImpl(this)
     }
 }
