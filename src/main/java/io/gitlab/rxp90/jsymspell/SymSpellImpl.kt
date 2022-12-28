@@ -1,440 +1,488 @@
-package io.gitlab.rxp90.jsymspell;
+package io.gitlab.rxp90.jsymspell
 
-import io.gitlab.rxp90.jsymspell.api.Bigram;
-import io.gitlab.rxp90.jsymspell.api.StringDistance;
-import io.gitlab.rxp90.jsymspell.api.SuggestItem;
-import io.gitlab.rxp90.jsymspell.exceptions.NotInitializedException;
+import io.gitlab.rxp90.jsymspell.api.Bigram
+import io.gitlab.rxp90.jsymspell.api.StringDistance
+import io.gitlab.rxp90.jsymspell.api.SuggestItem
+import io.gitlab.rxp90.jsymspell.exceptions.NotInitializedException
+import java.util.*
+import java.util.concurrent.ConcurrentHashMap
+import java.util.function.Consumer
+import java.util.logging.Logger
 
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.logging.Logger;
-
-import static io.gitlab.rxp90.jsymspell.Verbosity.*;
-
-public class SymSpellImpl implements SymSpell {
-
-    private static final Logger logger = Logger.getLogger(SymSpellImpl.class.getName());
-    private static final long BIGRAM_COUNT_MIN = Long.MAX_VALUE;
-
-    private final int maxDictionaryEditDistance;
-    private final int prefixLength;
+class SymSpellImpl internal constructor(builder: SymSpellBuilder) : SymSpell {
+    private val maxDictionaryEditDistance: Int
+    private val prefixLength: Int
 
     /**
      * Map of Delete -> Collection of words that lead to that edited word
      */
-    private final Map<String, Collection<String>> deletes = new ConcurrentHashMap<>();
-    private final Map<Bigram, Long> bigramLexicon;
-    private final Map<String, Long> unigramLexicon;
-    private final StringDistance stringDistance;
-    private final int maxDictionaryWordLength;
+    private val deletes: MutableMap<String, MutableCollection<String>> = ConcurrentHashMap()
+    private val bigramLexicon: Map<Bigram, Long>
+    private val unigramLexicon: Map<String, Long>
+    private val stringDistance: StringDistance
+    private val maxDictionaryWordLength: Int
 
     /**
      * Sum of all counts in the dictionary
      */
-    private final long n;
+    private val n: Long
 
-    SymSpellImpl(SymSpellBuilder builder) {
-        this.unigramLexicon = new HashMap<>(builder.getUnigramLexicon());
-        this.maxDictionaryEditDistance = builder.getMaxDictionaryEditDistance();
-        this.prefixLength = builder.getPrefixLength();
-        this.bigramLexicon = new HashMap<>(builder.getBigramLexicon());
-        this.stringDistance = builder.getStringDistanceAlgorithm();
-        this.n = unigramLexicon.values().stream().reduce(Long::sum).orElse(0L);
-        this.unigramLexicon.keySet().forEach(word ->{
-            Map<String, Collection<String>> edits = generateEdits(word);
-            edits.forEach((string, suggestions) -> this.deletes.computeIfAbsent(string, ignored -> new ArrayList<>()).addAll(suggestions));
-        });
-        this.maxDictionaryWordLength = this.unigramLexicon.keySet().stream().map(String::length).max(Integer::compareTo).orElse(0);
-    }
-
-    private boolean deleteSuggestionPrefix(String delete, int deleteLen, String suggestion, int suggestionLen) {
-        if (deleteLen == 0) return true;
-
-        int adjustedSuggestionLen = Math.min(prefixLength, suggestionLen);
-
-        int j = 0;
-
-        for (int i = 0; i < deleteLen; i++) {
-            char delChar = delete.charAt(i);
-            while (j < adjustedSuggestionLen && delChar != suggestion.charAt(j)) {
-                j++;
+    init {
+        unigramLexicon = HashMap(builder.unigramLexicon)
+        maxDictionaryEditDistance = builder.maxDictionaryEditDistance
+        prefixLength = builder.prefixLength
+        bigramLexicon = HashMap(builder.bigramLexicon)
+        stringDistance = builder.stringDistanceAlgorithm
+        n = unigramLexicon.values.stream().reduce { a: Long, b: Long -> java.lang.Long.sum(a, b) }.orElse(0L)
+        unigramLexicon.keys.forEach(Consumer { word: String ->
+            val edits = generateEdits(word)
+            edits.forEach { (string: String, suggestions: Collection<String>?) ->
+                deletes.computeIfAbsent(string) { ignored: String? -> ArrayList() }
+                    .addAll(
+                        suggestions
+                    )
             }
-            if (j == adjustedSuggestionLen) return false;
-        }
-        return true;
+        })
+        maxDictionaryWordLength = unigramLexicon.keys.stream().map { obj: String -> obj.length }
+            .max { obj: Int, anotherInteger: Int? -> obj.compareTo(anotherInteger!!) }.orElse(0)
     }
 
-    Set<String> edits(String word, int editDistance, Set<String> deleteWords) {
-        editDistance++;
-        if (word.length() > 1 && editDistance <= maxDictionaryEditDistance) {
-            for (int i = 0; i < word.length(); i++) {
-                StringBuilder editableWord = new StringBuilder(word);
-                String delete = editableWord.deleteCharAt(i).toString();
+    private fun deleteSuggestionPrefix(
+        delete: String,
+        deleteLen: Int,
+        suggestion: String,
+        suggestionLen: Int
+    ): Boolean {
+        if (deleteLen == 0) return true
+        val adjustedSuggestionLen = Math.min(prefixLength, suggestionLen)
+        var j = 0
+        for (i in 0 until deleteLen) {
+            val delChar = delete[i]
+            while (j < adjustedSuggestionLen && delChar != suggestion[j]) {
+                j++
+            }
+            if (j == adjustedSuggestionLen) return false
+        }
+        return true
+    }
+
+    fun edits(word: String, editDistance: Int, deleteWords: MutableSet<String>): Set<String> {
+        var editDistance = editDistance
+        editDistance++
+        if (word.length > 1 && editDistance <= maxDictionaryEditDistance) {
+            for (i in 0 until word.length) {
+                val editableWord = StringBuilder(word)
+                val delete = editableWord.deleteCharAt(i).toString()
                 if (deleteWords.add(delete) && editDistance < maxDictionaryEditDistance) {
-                    edits(delete, editDistance, deleteWords);
+                    edits(delete, editDistance, deleteWords)
                 }
             }
         }
-        return deleteWords;
+        return deleteWords
     }
 
-    private Map<String, Collection<String>> generateEdits(String key) {
-        Set<String> edits = editsPrefix(key);
-        Map<String, Collection<String>> generatedDeletes = new HashMap<>();
-        edits.forEach(delete -> generatedDeletes.computeIfAbsent(delete, ignored -> new ArrayList<>()).add(key));
-        return generatedDeletes;
+    private fun generateEdits(key: String): Map<String, MutableCollection<String>> {
+        val edits = editsPrefix(key)
+        val generatedDeletes: MutableMap<String, MutableCollection<String>> = HashMap()
+        edits.forEach(Consumer { delete: String ->
+            generatedDeletes.computeIfAbsent(delete) { ignored: String? -> ArrayList() }
+                .add(key)
+        })
+        return generatedDeletes
     }
 
-    private Set<String> editsPrefix(String key) {
-        Set<String> set = new HashSet<>();
-        if (key.length() <= maxDictionaryEditDistance) {
-            set.add("");
+    private fun editsPrefix(key: String): Set<String> {
+        var key = key
+        val set: MutableSet<String> = HashSet()
+        if (key.length <= maxDictionaryEditDistance) {
+            set.add("")
         }
-        if (key.length() > prefixLength) {
-            key = key.substring(0, prefixLength);
+        if (key.length > prefixLength) {
+            key = key.substring(0, prefixLength)
         }
-        set.add(key);
-        return edits(key, 0, set);
+        set.add(key)
+        return edits(key, 0, set)
     }
 
-    @Override
-    public List<SuggestItem> lookup(String input, Verbosity verbosity, boolean includeUnknown) throws NotInitializedException {
-        return lookup(input, verbosity, this.maxDictionaryEditDistance, includeUnknown);
+    @Throws(NotInitializedException::class)
+    override fun lookup(input: String, verbosity: Verbosity, includeUnknown: Boolean): List<SuggestItem> {
+        return lookup(input, verbosity, maxDictionaryEditDistance, includeUnknown)
     }
 
-    @Override
-    public List<SuggestItem> lookup(String input, Verbosity verbosity) throws NotInitializedException {
-        return lookup(input, verbosity, false);
+    @Throws(NotInitializedException::class)
+    override fun lookup(input: String, verbosity: Verbosity): List<SuggestItem> {
+        return lookup(input, verbosity, false)
     }
 
-    private List<SuggestItem> lookup(String input, Verbosity verbosity, int maxEditDistance, boolean includeUnknown) throws NotInitializedException {
-        if (maxEditDistance > maxDictionaryEditDistance) {
-            throw new IllegalArgumentException("maxEditDistance > maxDictionaryEditDistance");
-        }
-
+    @Throws(NotInitializedException::class)
+    private fun lookup(
+        input: String,
+        verbosity: Verbosity,
+        maxEditDistance: Int,
+        includeUnknown: Boolean
+    ): List<SuggestItem> {
+        require(maxEditDistance <= maxDictionaryEditDistance) { "maxEditDistance > maxDictionaryEditDistance" }
         if (unigramLexicon.isEmpty()) {
-            throw new NotInitializedException("There are no words in the lexicon.");
+            throw NotInitializedException("There are no words in the lexicon.")
         }
-
-        List<SuggestItem> suggestions = new ArrayList<>();
-        int inputLen = input.length();
-        boolean wordIsTooLong = inputLen - maxEditDistance > maxDictionaryWordLength;
+        val suggestions: MutableList<SuggestItem> = ArrayList()
+        val inputLen = input.length
+        val wordIsTooLong = inputLen - maxEditDistance > maxDictionaryWordLength
         if (wordIsTooLong && includeUnknown) {
-            return Arrays.asList(new SuggestItem(input, maxEditDistance + 1, 0));
+            return Arrays.asList(SuggestItem(input, maxEditDistance + 1, 0.0))
         }
-
         if (unigramLexicon.containsKey(input)) {
-            SuggestItem suggestSameWord = new SuggestItem(input, 0, unigramLexicon.get(input));
-            suggestions.add(suggestSameWord);
-
-            if (!verbosity.equals(ALL)) {
-                return suggestions;
+            val suggestSameWord = SuggestItem(input, 0, unigramLexicon[input]!!.toDouble())
+            suggestions.add(suggestSameWord)
+            if (verbosity != Verbosity.ALL) {
+                return suggestions
             }
         }
-
         if (maxEditDistance == 0 && includeUnknown && suggestions.isEmpty()) {
-            return Arrays.asList(new SuggestItem(input, maxEditDistance + 1, 0));
+            return Arrays.asList(SuggestItem(input, maxEditDistance + 1, 0.0))
         }
-
-        Set<String> deletesAlreadyConsidered = new HashSet<>();
-        List<String> candidates = new ArrayList<>();
-
-        int inputPrefixLen;
+        val deletesAlreadyConsidered: MutableSet<String> = HashSet()
+        val candidates: MutableList<String> = ArrayList()
+        val inputPrefixLen: Int
         if (inputLen > prefixLength) {
-            inputPrefixLen = prefixLength;
-            candidates.add(input.substring(0, inputPrefixLen));
+            inputPrefixLen = prefixLength
+            candidates.add(input.substring(0, inputPrefixLen))
         } else {
-            inputPrefixLen = inputLen;
+            inputPrefixLen = inputLen
         }
-        candidates.add(input);
-
-        Set<String> suggestionsAlreadyConsidered = new HashSet<>();
-        suggestionsAlreadyConsidered.add(input);
-        int maxEditDistance2 = maxEditDistance;
-
-        int candidatePointer = 0;
-        while (candidatePointer < candidates.size()) {
-            String candidate = candidates.get(candidatePointer++);
-            int candidateLength = candidate.length();
-            int lengthDiffBetweenInputAndCandidate = inputPrefixLen - candidateLength;
-
-            boolean candidateDistanceHigherThanSuggestionDistance = lengthDiffBetweenInputAndCandidate > maxEditDistance2;
+        candidates.add(input)
+        val suggestionsAlreadyConsidered: MutableSet<String> = HashSet()
+        suggestionsAlreadyConsidered.add(input)
+        var maxEditDistance2 = maxEditDistance
+        var candidatePointer = 0
+        while (candidatePointer < candidates.size) {
+            val candidate = candidates[candidatePointer++]
+            val candidateLength = candidate.length
+            val lengthDiffBetweenInputAndCandidate = inputPrefixLen - candidateLength
+            val candidateDistanceHigherThanSuggestionDistance = lengthDiffBetweenInputAndCandidate > maxEditDistance2
             if (candidateDistanceHigherThanSuggestionDistance) {
-                if (verbosity.equals(ALL)) {
-                    continue;
+                if (verbosity == Verbosity.ALL) {
+                    continue
                 } else {
-                    break;
+                    break
                 }
             }
-
             if (lengthDiffBetweenInputAndCandidate < maxEditDistance && candidateLength <= prefixLength) {
-                if (!verbosity.equals(ALL) && lengthDiffBetweenInputAndCandidate >= maxEditDistance2) {
-                    continue;
+                if (verbosity != Verbosity.ALL && lengthDiffBetweenInputAndCandidate >= maxEditDistance2) {
+                    continue
                 }
-                candidates.addAll(generateNewCandidates(candidate, deletesAlreadyConsidered));
+                candidates.addAll(generateNewCandidates(candidate, deletesAlreadyConsidered))
             }
-
-            Collection<String> preCalculatedDeletes = deletes.get(candidate);
+            val preCalculatedDeletes: Collection<String>? = deletes[candidate]
             if (preCalculatedDeletes != null) {
-                for (String preCalculatedDelete : preCalculatedDeletes) {
-                    if (preCalculatedDelete.equals(input) || ((Math.abs(preCalculatedDelete.length() - inputLen) > maxEditDistance2)
-                            || (preCalculatedDelete.length() < candidateLength)
-                            || (preCalculatedDelete.length() == candidateLength && !preCalculatedDelete.equals(candidate))) || (Math.min(preCalculatedDelete.length(), prefixLength) > inputPrefixLen
-                            && (Math.min(preCalculatedDelete.length(), prefixLength) - candidateLength) > maxEditDistance2)){
-                        continue;
+                for (preCalculatedDelete in preCalculatedDeletes) {
+                    if ((preCalculatedDelete == input || Math.abs(preCalculatedDelete.length - inputLen) > maxEditDistance2 || preCalculatedDelete.length < candidateLength || preCalculatedDelete.length == candidateLength) && preCalculatedDelete != candidate || (Math.min(
+                            preCalculatedDelete.length,
+                            prefixLength
+                        ) > inputPrefixLen
+                                && Math.min(
+                            preCalculatedDelete.length,
+                            prefixLength
+                        ) - candidateLength > maxEditDistance2)
+                    ) {
+                        continue
                     }
-
-                    int distance;
+                    var distance: Int
                     if (candidateLength == 0) {
-                        distance = Math.max(inputLen, preCalculatedDelete.length());
+                        distance = Math.max(inputLen, preCalculatedDelete.length)
                         if (distance <= maxEditDistance2) {
-                            suggestionsAlreadyConsidered.add(preCalculatedDelete);
+                            suggestionsAlreadyConsidered.add(preCalculatedDelete)
                         }
-                    } else if (preCalculatedDelete.length() == 1) {
-                        if (input.contains(preCalculatedDelete)) {
-                            distance = inputLen - 1;
+                    } else if (preCalculatedDelete.length == 1) {
+                        distance = if (input.contains(preCalculatedDelete)) {
+                            inputLen - 1
                         } else {
-                            distance = inputLen;
+                            inputLen
                         }
                         if (distance <= maxEditDistance2) {
-                            suggestionsAlreadyConsidered.add(preCalculatedDelete);
+                            suggestionsAlreadyConsidered.add(preCalculatedDelete)
                         }
                     } else {
-                        int minDistance = Math.min(inputLen, preCalculatedDelete.length()) - prefixLength;
-
-                        boolean noDistanceCalculationIsRequired = prefixLength - maxEditDistance == candidateLength
-                                && (minDistance > 1 && (!input.substring(inputLen + 1 - minDistance).equals(preCalculatedDelete.substring(preCalculatedDelete.length() + 1 - minDistance))))
-                                || (minDistance > 0
-                                    && input.charAt(inputLen - minDistance) != preCalculatedDelete.charAt(preCalculatedDelete.length() - minDistance)
-                                    && input.charAt(inputLen - minDistance - 1) != preCalculatedDelete.charAt(preCalculatedDelete.length() - minDistance)
-                                    && input.charAt(inputLen - minDistance) != preCalculatedDelete.charAt(preCalculatedDelete.length() - minDistance - 1));
-
+                        val minDistance = Math.min(inputLen, preCalculatedDelete.length) - prefixLength
+//                      /*
+//                      boolean noDistanceCalculationIsRequired = prefixLength - maxEditDistance == candidateLength
+//                                && (minDistance > 1 && (!input.substring(inputLen + 1 - minDistance).equals(preCalculatedDelete.substring(preCalculatedDelete.length() + 1 - minDistance))))
+//                                || (minDistance > 0
+//                                    && input.charAt(inputLen - minDistance) != preCalculatedDelete.charAt(preCalculatedDelete.length() - minDistance)
+//                                    && input.charAt(inputLen - minDistance - 1) != preCalculatedDelete.charAt(preCalculatedDelete.length() - minDistance)
+//                                    && input.charAt(inputLen - minDistance) != preCalculatedDelete.charAt(preCalculatedDelete.length() - minDistance - 1));
+//                      */
+                        val noDistanceCalculationIsRequired =
+                            prefixLength - maxEditDistance == candidateLength
+                                    && (minDistance > 1 && input.substring(inputLen + 1 - minDistance)!= preCalculatedDelete.substring(preCalculatedDelete.length + 1 - minDistance))
+                                    || (minDistance > 0
+                                    && input[inputLen - minDistance] != preCalculatedDelete[preCalculatedDelete.length - minDistance]
+                                    && input[inputLen - minDistance - 1] != preCalculatedDelete[preCalculatedDelete.length - minDistance]
+                                    && input[inputLen - minDistance] != preCalculatedDelete[preCalculatedDelete.length - minDistance - 1])
                         if (noDistanceCalculationIsRequired) {
-                            continue;
+                            continue
                         } else {
-                            if (!verbosity.equals(ALL)
-                                    && !deleteSuggestionPrefix(candidate, candidateLength, preCalculatedDelete, preCalculatedDelete.length())
-                                    || !suggestionsAlreadyConsidered.add(preCalculatedDelete)) {
-                                continue;
+                            if (verbosity != Verbosity.ALL
+                                && !deleteSuggestionPrefix(
+                                    candidate,
+                                    candidateLength,
+                                    preCalculatedDelete,
+                                    preCalculatedDelete.length
+                                )
+                                || !suggestionsAlreadyConsidered.add(preCalculatedDelete)
+                            ) {
+                                continue
                             }
-                            distance = stringDistance.distanceWithEarlyStop(input, preCalculatedDelete, maxEditDistance2);
+                            distance =
+                                stringDistance.distanceWithEarlyStop(input, preCalculatedDelete, maxEditDistance2)
                             if (distance < 0) {
-                                continue;
+                                continue
                             }
                         }
-
                         if (distance <= maxEditDistance2) {
-                            SuggestItem suggestItem = new SuggestItem(preCalculatedDelete, distance, unigramLexicon.get(preCalculatedDelete));
+                            val suggestItem = SuggestItem(
+                                preCalculatedDelete, distance, unigramLexicon[preCalculatedDelete]!!
+                                    .toDouble()
+                            )
                             if (!suggestions.isEmpty()) {
-                                if (verbosity.equals(CLOSEST) && distance < maxEditDistance2) {
-                                    suggestions.clear();
-                                } else if (verbosity.equals(TOP) && (distance < maxEditDistance2 || suggestItem.getFrequencyOfSuggestionInDict() > suggestions.get(0).getFrequencyOfSuggestionInDict())) {
-                                    maxEditDistance2 = distance;
-                                    suggestions.add(suggestItem);
+                                if (verbosity == Verbosity.CLOSEST && distance < maxEditDistance2) {
+                                    suggestions.clear()
+                                } else if (verbosity == Verbosity.TOP && (distance < maxEditDistance2 || suggestItem.frequencyOfSuggestionInDict > suggestions[0].frequencyOfSuggestionInDict)) {
+                                    maxEditDistance2 = distance
+                                    suggestions.add(suggestItem)
                                 }
                             }
-                            if (!verbosity.equals(ALL)) {
-                                maxEditDistance2 = distance;
+                            if (verbosity != Verbosity.ALL) {
+                                maxEditDistance2 = distance
                             }
-                            suggestions.add(suggestItem);
+                            suggestions.add(suggestItem)
                         }
                     }
                 }
             }
-
         }
-        if (suggestions.size() > 1) {
-            Collections.sort(suggestions);
+        if (suggestions.size > 1) {
+            Collections.sort(suggestions)
         }
-        if (includeUnknown && (suggestions.isEmpty())) {
-            SuggestItem noSuggestionsFound = new SuggestItem(input, maxEditDistance + 1, 0);
-            suggestions.add(noSuggestionsFound);
+        if (includeUnknown && suggestions.isEmpty()) {
+            val noSuggestionsFound = SuggestItem(input, maxEditDistance + 1, 0.0)
+            suggestions.add(noSuggestionsFound)
         }
-        return suggestions;
+        return suggestions
     }
 
-    private Set<String> generateNewCandidates(String candidate, Set<String> deletesAlreadyConsidered) {
-        Set<String> newDeletes = new HashSet<>();
-        for (int i = 0; i < candidate.length(); i++) {
-            StringBuilder editableString = new StringBuilder(candidate);
-            String delete = editableString.deleteCharAt(i).toString();
-            if (deletesAlreadyConsidered.add(delete)){
-                newDeletes.add(delete);
+    private fun generateNewCandidates(candidate: String, deletesAlreadyConsidered: MutableSet<String>): Set<String> {
+        val newDeletes: MutableSet<String> = HashSet()
+        for (i in 0 until candidate.length) {
+            val editableString = StringBuilder(candidate)
+            val delete = editableString.deleteCharAt(i).toString()
+            if (deletesAlreadyConsidered.add(delete)) {
+                newDeletes.add(delete)
             }
         }
-        return newDeletes;
+        return newDeletes
     }
 
-    @Override
-    public List<SuggestItem> lookupCompound(String input, int editDistanceMax, boolean includeUnknown) throws NotInitializedException {
-        String[] termList = input.split(" ");
-        List<SuggestItem> suggestionParts = new ArrayList<>();
-
-        boolean lastCombination = false;
-
-        for (int i = 0; i < termList.length; i++) {
-            String currentToken = termList[i];
-            List<SuggestItem> suggestionsForCurrentToken = lookup(currentToken, TOP, editDistanceMax, includeUnknown);
-
+    @Throws(NotInitializedException::class)
+    override fun lookupCompound(input: String, editDistanceMax: Int, includeUnknown: Boolean): List<SuggestItem> {
+        val termList = input.split(" ".toRegex()).dropLastWhile { it.isEmpty() }.toTypedArray()
+        val suggestionParts: MutableList<SuggestItem> = ArrayList()
+        var lastCombination = false
+        for (i in termList.indices) {
+            val currentToken = termList[i]
+            val suggestionsForCurrentToken = lookup(currentToken, Verbosity.TOP, editDistanceMax, includeUnknown)
             if (i > 0 && !lastCombination) {
-                SuggestItem bestSuggestion = suggestionParts.get(suggestionParts.size() - 1);
-                Optional<SuggestItem> newSuggestion = combineWords(editDistanceMax, includeUnknown, currentToken, termList[i - 1], bestSuggestion, suggestionsForCurrentToken.isEmpty() ? null : suggestionsForCurrentToken.get(0));
-
-                if (newSuggestion.isPresent()) {
-                    suggestionParts.set(suggestionParts.size() - 1, newSuggestion.get());
-                    lastCombination = true;
-                    continue;
+                val bestSuggestion = suggestionParts[suggestionParts.size - 1]
+                val newSuggestion = combineWords(
+                    editDistanceMax,
+                    includeUnknown,
+                    currentToken,
+                    termList[i - 1],
+                    bestSuggestion,
+                    if (suggestionsForCurrentToken.isEmpty()) null else suggestionsForCurrentToken[0]
+                )
+                if (newSuggestion.isPresent) {
+                    suggestionParts[suggestionParts.size - 1] = newSuggestion.get()
+                    lastCombination = true
+                    continue
                 }
             }
-
-            lastCombination = false;
-
+            lastCombination = false
             if (!suggestionsForCurrentToken.isEmpty()) {
-                boolean firstSuggestionIsPerfect = suggestionsForCurrentToken.get(0).getEditDistance() == 0;
-                if (firstSuggestionIsPerfect || currentToken.length() == 1) {
-                    suggestionParts.add(suggestionsForCurrentToken.get(0));
+                val firstSuggestionIsPerfect = suggestionsForCurrentToken[0].editDistance == 0
+                if (firstSuggestionIsPerfect || currentToken.length == 1) {
+                    suggestionParts.add(suggestionsForCurrentToken[0])
                 } else {
-                    splitWords(editDistanceMax, termList, suggestionsForCurrentToken, suggestionParts, i);
+                    splitWords(editDistanceMax, termList, suggestionsForCurrentToken, suggestionParts, i)
                 }
             } else {
-                splitWords(editDistanceMax, termList, suggestionsForCurrentToken, suggestionParts, i);
+                splitWords(editDistanceMax, termList, suggestionsForCurrentToken, suggestionParts, i)
             }
         }
-        double freq = n;
-        StringBuilder stringBuilder = new StringBuilder();
-        for (SuggestItem suggestItem : suggestionParts) {
-            stringBuilder.append(suggestItem.getSuggestion()).append(" ");
-            freq *= suggestItem.getFrequencyOfSuggestionInDict() / n;
+        var freq = n.toDouble()
+        val stringBuilder = StringBuilder()
+        for (suggestItem in suggestionParts) {
+            stringBuilder.append(suggestItem.suggestion).append(" ")
+            freq *= suggestItem.frequencyOfSuggestionInDict / n
         }
-
-        String term = stringBuilder.toString().replaceFirst("\\s++$", ""); // this replace call trims all trailing whitespace
-        SuggestItem suggestion = new SuggestItem(term, stringDistance.distanceWithEarlyStop(input, term, Integer.MAX_VALUE), freq);
-        List<SuggestItem> suggestionsLine = new ArrayList<>();
-        suggestionsLine.add(suggestion);
-        return suggestionsLine;
+        val term = stringBuilder.toString()
+            .replaceFirst("\\s++$".toRegex(), "") // this replace call trims all trailing whitespace
+        val suggestion = SuggestItem(term, stringDistance.distanceWithEarlyStop(input, term, Int.MAX_VALUE), freq)
+        val suggestionsLine: MutableList<SuggestItem> = ArrayList()
+        suggestionsLine.add(suggestion)
+        return suggestionsLine
     }
 
-    private void splitWords(int editDistanceMax, String[] termList, List<SuggestItem> suggestions, List<SuggestItem> suggestionParts, int i) throws NotInitializedException {
-        SuggestItem suggestionSplitBest = null;
-        if (!suggestions.isEmpty()) suggestionSplitBest = suggestions.get(0);
-
-        String word = termList[i];
-        if (word.length() > 1) {
-            for (int j = 1; j < word.length(); j++) {
-                String part1 = word.substring(0, j);
-                String part2 = word.substring(j);
-                SuggestItem suggestionSplit;
-                List<SuggestItem> suggestions1 = lookup(part1, TOP, editDistanceMax, false);
+    @Throws(NotInitializedException::class)
+    private fun splitWords(
+        editDistanceMax: Int,
+        termList: Array<String>,
+        suggestions: List<SuggestItem>,
+        suggestionParts: MutableList<SuggestItem>,
+        i: Int
+    ) {
+        var suggestionSplitBest: SuggestItem? = null
+        if (!suggestions.isEmpty()) suggestionSplitBest = suggestions[0]
+        val word = termList[i]
+        if (word.length > 1) {
+            for (j in 1 until word.length) {
+                val part1 = word.substring(0, j)
+                val part2 = word.substring(j)
+                var suggestionSplit: SuggestItem
+                val suggestions1 = lookup(part1, Verbosity.TOP, editDistanceMax, false)
                 if (!suggestions1.isEmpty()) {
-                    List<SuggestItem> suggestions2 = lookup(part2, TOP, editDistanceMax, false);
+                    val suggestions2 = lookup(part2, Verbosity.TOP, editDistanceMax, false)
                     if (!suggestions2.isEmpty()) {
-
-                        Bigram splitTerm = new Bigram(suggestions1.get(0).getSuggestion(), suggestions2.get(0).getSuggestion());
-                        int splitDistance = stringDistance.distanceWithEarlyStop(word, splitTerm.toString(), editDistanceMax);
-
-                        if (splitDistance < 0) splitDistance = editDistanceMax + 1;
-
+                        val splitTerm = Bigram(suggestions1[0].suggestion, suggestions2[0].suggestion)
+                        var splitDistance =
+                            stringDistance.distanceWithEarlyStop(word, splitTerm.toString(), editDistanceMax)
+                        if (splitDistance < 0) splitDistance = editDistanceMax + 1
                         if (suggestionSplitBest != null) {
-                            if (splitDistance > suggestionSplitBest.getEditDistance()) continue;
-                            if (splitDistance < suggestionSplitBest.getEditDistance()) suggestionSplitBest = null;
+                            if (splitDistance > suggestionSplitBest.editDistance) continue
+                            if (splitDistance < suggestionSplitBest.editDistance) suggestionSplitBest = null
                         }
-                        double freq;
+                        var freq: Double
                         if (bigramLexicon.containsKey(splitTerm)) {
-                            freq = bigramLexicon.get(splitTerm);
-
+                            freq = bigramLexicon[splitTerm]!!.toDouble()
                             if (!suggestions.isEmpty()) {
-                                if ((suggestions1.get(0).getSuggestion() + suggestions2.get(0).getSuggestion()).equals(word)) {
-                                    freq = Math.max(freq, suggestions.get(0).getFrequencyOfSuggestionInDict() + 2);
-                                } else if ((suggestions1.get(0)
-                                                        .getSuggestion()
-                                                        .equals(suggestions.get(0).getSuggestion())
-                                        || suggestions2.get(0)
-                                                       .getSuggestion()
-                                                       .equals(suggestions.get(0).getSuggestion()))) {
-                                    freq = Math.max(freq, suggestions.get(0).getFrequencyOfSuggestionInDict() + 1);
+                                if (suggestions1[0].suggestion + suggestions2[0].suggestion == word) {
+                                    freq = Math.max(freq, suggestions[0].frequencyOfSuggestionInDict + 2)
+                                } else if ((suggestions1[0]
+                                        .suggestion
+                                            == suggestions[0].suggestion) || (suggestions2[0]
+                                        .suggestion
+                                            == suggestions[0].suggestion)
+                                ) {
+                                    freq = Math.max(freq, suggestions[0].frequencyOfSuggestionInDict + 1)
                                 }
-
-                            } else if ((suggestions1.get(0).getSuggestion() + suggestions2.get(0).getSuggestion()).equals(word)) {
-                                freq = Math.max(freq, Math.max(suggestions1.get(0).getFrequencyOfSuggestionInDict(), suggestions2.get(0).getFrequencyOfSuggestionInDict()));
+                            } else if (suggestions1[0].suggestion + suggestions2[0].suggestion == word) {
+                                freq = Math.max(
+                                    freq,
+                                    Math.max(
+                                        suggestions1[0].frequencyOfSuggestionInDict,
+                                        suggestions2[0].frequencyOfSuggestionInDict
+                                    )
+                                )
                             }
                         } else {
                             // The Naive Bayes probability of the word combination is the product of the two
                             // word probabilities: P(AB) = P(A) * P(B)
                             // use it to estimate the frequency count of the combination, which then is used
                             // to rank/select the best splitting variant
-                            freq = Math.min(BIGRAM_COUNT_MIN, getNaiveBayesProbOfCombination(suggestions1, suggestions2));
+                            freq =
+                                Math.min(BIGRAM_COUNT_MIN, getNaiveBayesProbOfCombination(suggestions1, suggestions2))
+                                    .toDouble()
                         }
-                        suggestionSplit = new SuggestItem(splitTerm.toString(), splitDistance, freq);
-
-                        if (suggestionSplitBest == null || suggestionSplit.getFrequencyOfSuggestionInDict() > suggestionSplitBest.getFrequencyOfSuggestionInDict()){
-                            suggestionSplitBest = suggestionSplit;
+                        suggestionSplit = SuggestItem(splitTerm.toString(), splitDistance, freq)
+                        if (suggestionSplitBest == null || suggestionSplit.frequencyOfSuggestionInDict > suggestionSplitBest.frequencyOfSuggestionInDict) {
+                            suggestionSplitBest = suggestionSplit
                         }
                     }
                 }
             }
             if (suggestionSplitBest != null) {
-                suggestionParts.add(suggestionSplitBest);
+                suggestionParts.add(suggestionSplitBest)
             } else {
-                SuggestItem suggestItem = new SuggestItem(word, editDistanceMax + 1, estimatedWordOccurrenceProbability(word)); // estimated word occurrence probability P=10 / (N * 10^word length l)
-
-                suggestionParts.add(suggestItem);
+                val suggestItem = SuggestItem(
+                    word,
+                    editDistanceMax + 1,
+                    estimatedWordOccurrenceProbability(word).toDouble()
+                ) // estimated word occurrence probability P=10 / (N * 10^word length l)
+                suggestionParts.add(suggestItem)
             }
         } else {
-            SuggestItem suggestItem = new SuggestItem(word, editDistanceMax + 1, estimatedWordOccurrenceProbability(word));
-            suggestionParts.add(suggestItem);
+            val suggestItem =
+                SuggestItem(word, editDistanceMax + 1, estimatedWordOccurrenceProbability(word).toDouble())
+            suggestionParts.add(suggestItem)
         }
     }
 
-    private long getNaiveBayesProbOfCombination(List<SuggestItem> suggestions1, List<SuggestItem> suggestions2) {
-        return (long) ((suggestions1.get(0).getFrequencyOfSuggestionInDict() / (double) n) * suggestions2.get(0).getFrequencyOfSuggestionInDict());
+    private fun getNaiveBayesProbOfCombination(suggestions1: List<SuggestItem>, suggestions2: List<SuggestItem>): Long {
+        return (suggestions1[0].frequencyOfSuggestionInDict / n.toDouble() * suggestions2[0].frequencyOfSuggestionInDict).toLong()
     }
 
-    private long estimatedWordOccurrenceProbability(String word) {
-        return (long) ((double) 10 / Math.pow(10, word.length()));
+    private fun estimatedWordOccurrenceProbability(word: String): Long {
+        return (10.0 / Math.pow(10.0, word.length.toDouble())).toLong()
     }
 
-    Optional<SuggestItem> combineWords(int editDistanceMax, boolean includeUnknown, String token, String previousToken, SuggestItem suggestItem, SuggestItem secondBestSuggestion) throws NotInitializedException {
-        List<SuggestItem> suggestionsCombination = lookup(previousToken + token, TOP, editDistanceMax, includeUnknown);
+    @Throws(NotInitializedException::class)
+    fun combineWords(
+        editDistanceMax: Int,
+        includeUnknown: Boolean,
+        token: String,
+        previousToken: String,
+        suggestItem: SuggestItem,
+        secondBestSuggestion: SuggestItem?
+    ): Optional<SuggestItem> {
+        val suggestionsCombination = lookup(previousToken + token, Verbosity.TOP, editDistanceMax, includeUnknown)
         if (!suggestionsCombination.isEmpty()) {
-            SuggestItem best2;
+            val best2: SuggestItem
             // TODO fixme
-            best2 = Optional.ofNullable(secondBestSuggestion).orElseGet(() -> new SuggestItem(token, editDistanceMax + 1, estimatedWordOccurrenceProbability(token)));
-
-            int distance = suggestItem.getEditDistance() + best2.getEditDistance();
-
-            SuggestItem firstSuggestion = suggestionsCombination.get(0);
-
-            if (distance >= 0 && (firstSuggestion.getEditDistance() + 1 < distance)
-                    || (firstSuggestion.getEditDistance() + 1 == distance
-                    && firstSuggestion.getFrequencyOfSuggestionInDict()
-                    > suggestItem.getFrequencyOfSuggestionInDict() / n
-                    * best2.getFrequencyOfSuggestionInDict())) {
-
-                return Optional.of(new SuggestItem(
-                        firstSuggestion.getSuggestion(),
-                        firstSuggestion.getEditDistance(),
-                        firstSuggestion.getFrequencyOfSuggestionInDict()));
+            best2 = Optional.ofNullable(secondBestSuggestion).orElseGet {
+                SuggestItem(
+                    token,
+                    editDistanceMax + 1,
+                    estimatedWordOccurrenceProbability(token).toDouble()
+                )
+            }
+            val distance = suggestItem.editDistance + best2.editDistance
+            val firstSuggestion = suggestionsCombination[0]
+            if (distance >= 0 && firstSuggestion.editDistance + 1 < distance
+                || (firstSuggestion.editDistance + 1 == distance
+                        && firstSuggestion.frequencyOfSuggestionInDict
+                        > suggestItem.frequencyOfSuggestionInDict / n
+                        * best2.frequencyOfSuggestionInDict)
+            ) {
+                return Optional.of(
+                    SuggestItem(
+                        firstSuggestion.suggestion,
+                        firstSuggestion.editDistance,
+                        firstSuggestion.frequencyOfSuggestionInDict
+                    )
+                )
             }
         }
-        return Optional.empty();
+        return Optional.empty()
     }
 
-    @Override
-    public Map<String, Long> getUnigramLexicon() {
-        return unigramLexicon;
+    override fun getUnigramLexicon(): Map<String, Long> {
+        return unigramLexicon
     }
 
-    @Override
-    public Map<Bigram, Long> getBigramLexicon() {
-        return bigramLexicon;
+    override fun getBigramLexicon(): Map<Bigram, Long> {
+        return bigramLexicon
     }
 
-    Map<String, Collection<String>> getDeletes() {
-        return deletes;
+    fun getDeletes(): Map<String, MutableCollection<String>> {
+        return deletes
     }
 
-    @Override
-    public int getMaxDictionaryEditDistance() {
-        return maxDictionaryEditDistance;
+    override fun getMaxDictionaryEditDistance(): Int {
+        return maxDictionaryEditDistance
+    }
+
+    companion object {
+        private val logger = Logger.getLogger(SymSpellImpl::class.java.name)
+        private const val BIGRAM_COUNT_MIN = Long.MAX_VALUE
     }
 }
