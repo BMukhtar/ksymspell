@@ -8,7 +8,7 @@ interface StringDistance {
      * @param maxDistance distance at which the algorithm will stop early
      * @return distance between `string1` and `string2`, early stopping at `maxDistance`, or `-1` if `maxDistance` was reached
      */
-    fun distanceWithEarlyStop(string1: String?, string2: String?, maxDistance: Int): Int
+    fun distanceWithEarlyStop(string1: String, string2: String, maxDistance: Int): Int
 
     /**
      * @see StringDistance.distanceWithEarlyStop

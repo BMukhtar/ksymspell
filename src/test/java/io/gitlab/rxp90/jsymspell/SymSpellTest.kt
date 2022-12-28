@@ -217,21 +217,23 @@ internal class SymSpellTest {
     @Test
     @Throws(NotInitializedException::class)
     fun customStringDistanceAlgorithm() {
-        val hammingDistance = StringDistance { string1: String, string2: String, maxDistance: Int ->
-            if (string1.length != string2.length) {
-                return@StringDistance -1
-            }
-            val chars1 = string1.toCharArray()
-            val chars2 = string2.toCharArray()
-            var distance = 0
-            for (i in chars1.indices) {
-                val c1 = chars1[i]
-                val c2 = chars2[i]
-                if (c1 != c2) {
-                    distance += 1
+        val hammingDistance = object : StringDistance {
+            override fun distanceWithEarlyStop(string1: String, string2: String, maxDistance: Int): Int {
+                if (string1.length != string2.length) {
+                    return -1
                 }
+                val chars1 = string1.toCharArray()
+                val chars2 = string2.toCharArray()
+                var distance = 0
+                for (i in chars1.indices) {
+                    val c1 = chars1[i]
+                    val c2 = chars2[i]
+                    if (c1 != c2) {
+                        distance += 1
+                    }
+                }
+                return distance
             }
-            distance
         }
         val symSpell: SymSpell = SymSpellBuilder().setUnigramLexicon(mapOf("1001001", 1L))
             .setStringDistanceAlgorithm(hammingDistance)
