@@ -14,8 +14,7 @@ class DamerauLevenshteinOSA : StringDistance {
     override fun distanceWithEarlyStop(baseString: String, string2: String, maxDistance: Int): Int {
         var string2 = string2
         var maxDistance = maxDistance
-        if (baseString == null) return string2?.length ?: 0
-        if (string2 == null || string2.isEmpty()) return baseString.length
+        if (string2.isEmpty()) return baseString.length
         if (maxDistance == 0) return if (baseString == string2) 0 else -1
         var baseChar1Costs = IntArray(baseString.length)
         var basePrevChar1Costs = IntArray(baseString.length)
