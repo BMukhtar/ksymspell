@@ -33,7 +33,7 @@ class SymSpellImpl internal constructor(builder: SymSpellBuilder) : SymSpell {
         prefixLength = builder.prefixLength
         bigramLexicon = HashMap(builder.bigramLexicon)
         stringDistance = builder.stringDistanceAlgorithm
-        n = unigramLexicon.values.stream().reduce { a: Long, b: Long -> java.lang.Long.sum(a, b) }.orElse(0L)
+        n = unigramLexicon.values.sum()
         unigramLexicon.keys.forEach(Consumer { word: String ->
             val edits = generateEdits(word)
             edits.forEach { (string: String, suggestions: Collection<String>?) ->
@@ -43,8 +43,7 @@ class SymSpellImpl internal constructor(builder: SymSpellBuilder) : SymSpell {
                     )
             }
         })
-        maxDictionaryWordLength = unigramLexicon.keys.stream().map { obj: String -> obj.length }
-            .max { obj: Int, anotherInteger: Int? -> obj.compareTo(anotherInteger!!) }.orElse(0)
+        maxDictionaryWordLength = unigramLexicon.keys.maxByOrNull { it.length }?.length ?: 0
     }
 
     private fun deleteSuggestionPrefix(
@@ -70,7 +69,7 @@ class SymSpellImpl internal constructor(builder: SymSpellBuilder) : SymSpell {
         var editDistance = editDistance
         editDistance++
         if (word.length > 1 && editDistance <= maxDictionaryEditDistance) {
-            for (i in 0 until word.length) {
+            for (i in word.indices) {
                 val editableWord = StringBuilder(word)
                 val delete = editableWord.deleteCharAt(i).toString()
                 if (deleteWords.add(delete) && editDistance < maxDictionaryEditDistance) {
@@ -84,10 +83,11 @@ class SymSpellImpl internal constructor(builder: SymSpellBuilder) : SymSpell {
     private fun generateEdits(key: String): Map<String, MutableCollection<String>> {
         val edits = editsPrefix(key)
         val generatedDeletes: MutableMap<String, MutableCollection<String>> = HashMap()
-        edits.forEach(Consumer { delete: String ->
-            generatedDeletes.computeIfAbsent(delete) { ignored: String? -> ArrayList() }
+        edits.forEach { delete: String ->
+            generatedDeletes
+                .computeIfAbsent(delete) { ignored: String? -> ArrayList() }
                 .add(key)
-        })
+        }
         return generatedDeletes
     }
 
@@ -176,7 +176,7 @@ class SymSpellImpl internal constructor(builder: SymSpellBuilder) : SymSpell {
             val preCalculatedDeletes: Collection<String>? = deletes[candidate]
             if (preCalculatedDeletes != null) {
                 for (preCalculatedDelete in preCalculatedDeletes) {
-                    if ((preCalculatedDelete == input || Math.abs(preCalculatedDelete.length - inputLen) > maxEditDistance2 || preCalculatedDelete.length < candidateLength || preCalculatedDelete.length == candidateLength) && preCalculatedDelete != candidate || (Math.min(
+                    if ((preCalculatedDelete == input || Math.abs(preCalculatedDelete.length - inputLen) > maxEditDistance2 || preCalculatedDelete.length <= candidateLength) && preCalculatedDelete != candidate || (Math.min(
                             preCalculatedDelete.length,
                             prefixLength
                         ) > inputPrefixLen
@@ -204,14 +204,6 @@ class SymSpellImpl internal constructor(builder: SymSpellBuilder) : SymSpell {
                         }
                     } else {
                         val minDistance = Math.min(inputLen, preCalculatedDelete.length) - prefixLength
-//                      /*
-//                      boolean noDistanceCalculationIsRequired = prefixLength - maxEditDistance == candidateLength
-//                                && (minDistance > 1 && (!input.substring(inputLen + 1 - minDistance).equals(preCalculatedDelete.substring(preCalculatedDelete.length() + 1 - minDistance))))
-//                                || (minDistance > 0
-//                                    && input.charAt(inputLen - minDistance) != preCalculatedDelete.charAt(preCalculatedDelete.length() - minDistance)
-//                                    && input.charAt(inputLen - minDistance - 1) != preCalculatedDelete.charAt(preCalculatedDelete.length() - minDistance)
-//                                    && input.charAt(inputLen - minDistance) != preCalculatedDelete.charAt(preCalculatedDelete.length() - minDistance - 1));
-//                      */
                         val noDistanceCalculationIsRequired =
                             prefixLength - maxEditDistance == candidateLength
                                     && (minDistance > 1 && input.substring(inputLen + 1 - minDistance)!= preCalculatedDelete.substring(preCalculatedDelete.length + 1 - minDistance))
@@ -262,7 +254,7 @@ class SymSpellImpl internal constructor(builder: SymSpellBuilder) : SymSpell {
             }
         }
         if (suggestions.size > 1) {
-            Collections.sort(suggestions)
+            suggestions.sort()
         }
         if (includeUnknown && suggestions.isEmpty()) {
             val noSuggestionsFound = SuggestItem(input, maxEditDistance + 1, 0.0)
@@ -273,7 +265,7 @@ class SymSpellImpl internal constructor(builder: SymSpellBuilder) : SymSpell {
 
     private fun generateNewCandidates(candidate: String, deletesAlreadyConsidered: MutableSet<String>): Set<String> {
         val newDeletes: MutableSet<String> = HashSet()
-        for (i in 0 until candidate.length) {
+        for (i in candidate.indices) {
             val editableString = StringBuilder(candidate)
             val delete = editableString.deleteCharAt(i).toString()
             if (deletesAlreadyConsidered.add(delete)) {
@@ -308,7 +300,7 @@ class SymSpellImpl internal constructor(builder: SymSpellBuilder) : SymSpell {
                 }
             }
             lastCombination = false
-            if (!suggestionsForCurrentToken.isEmpty()) {
+            if (suggestionsForCurrentToken.isNotEmpty()) {
                 val firstSuggestionIsPerfect = suggestionsForCurrentToken[0].editDistance == 0
                 if (firstSuggestionIsPerfect || currentToken.length == 1) {
                     suggestionParts.add(suggestionsForCurrentToken[0])
